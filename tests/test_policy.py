@@ -1,9 +1,9 @@
 from gate.policy import (
+    account_is_blocked,
     contains_alias,
     get_mode_policy,
     group_is_allowed,
     parse_string_set,
-    starts_with_ignored_prefix,
 )
 
 
@@ -29,15 +29,19 @@ def test_empty_whitelist_allows_group() -> None:
     )
 
 
-def test_alias_and_prefix_matching_are_case_insensitive() -> None:
+def test_alias_matching_is_case_insensitive() -> None:
     assert contains_alias("Denia 你怎么看", {"denia"})
-    assert starts_with_ignored_prefix("  WW刷新面板", {"ww"})
 
 
-def test_command_prefix_does_not_match_longer_ascii_word() -> None:
-    assert not starts_with_ignored_prefix("www 笑死", {"ww"})
-    assert not starts_with_ignored_prefix("ww_foo", {"ww"})
-    assert starts_with_ignored_prefix("ww 刷新面板", {"ww"})
+def test_account_blacklist_matches_sender_only() -> None:
+    assert account_is_blocked(
+        sender_id="100",
+        blacklist={"100"},
+    )
+    assert not account_is_blocked(
+        sender_id="200",
+        blacklist={"100"},
+    )
 
 
 def test_unknown_mode_uses_balanced_policy() -> None:

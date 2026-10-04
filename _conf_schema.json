@@ -18,14 +18,21 @@
     "default": "",
     "hint": "选择负责判断“要不要接话”的聊天模型；留空表示跟随当前会话模型。"
   },
+  "image_provider_id": {
+    "description": "识别图片使用的模型",
+    "type": "string",
+    "_special": "select_provider",
+    "default": "",
+    "hint": "选择负责把群聊图片转换成文字描述的视觉模型；留空时尝试使用 AstrBot 的默认图片描述模型。不会用它生成最终回复。"
+  },
   "group_whitelist": {
-    "description": "只在这些群生效",
+    "description": "群白名单",
     "type": "text",
     "default": "",
     "hint": "填写群 ID 或完整 UMO，逗号、空格或换行分隔；留空表示所有群。"
   },
   "group_blacklist": {
-    "description": "不参与的群",
+    "description": "群黑名单",
     "type": "text",
     "default": "",
     "hint": "填写群 ID 或完整 UMO，逗号、空格或换行分隔。这里的设置优先于生效群列表。"
@@ -36,17 +43,11 @@
     "default": "",
     "hint": "填写别人可能用来叫机器人的名字，逗号或换行分隔。叫到这些名字时跳过概率抽样，但仍会判断是否值得回复。"
   },
-  "other_bot_ids": {
-    "description": "其他机器人的账号",
+  "account_blacklist": {
+    "description": "账号黑名单",
     "type": "text",
     "default": "",
-    "hint": "填写平台账号 ID，逗号、空格或换行分隔。QQ/OneBot 填机器人的 QQ 号，不填昵称或 /sid 返回的完整 UMO。消息中 @ 这些账号时会被忽略。"
-  },
-  "ignored_command_prefixes": {
-    "description": "忽略的命令开头",
-    "type": "text",
-    "default": "",
-    "hint": "逗号或换行分隔，例如 ww,/推文。匹配后若紧接其他英文字母、数字或下划线，则不视为命令，因此 ww 不会误伤 www。"
+    "hint": "填写用户 QQ 号，机器人不会响应该用户。每行一个或用逗号、空格分隔；昵称和 /sid 返回的会话 ID 无效。"
   },
   "context_message_count": {
     "description": "参考最近消息数",

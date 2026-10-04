@@ -22,31 +22,58 @@ class FakeContext:
     def __init__(self, *, builtin_active: bool = False, conversation=None) -> None:
         self.builtin_active = builtin_active
         self.conversation_manager = FakeConversationManager(conversation)
+        self.llm_calls = []
+        self.llm_responses = {}
 
     def get_config(self, *, umo: str):
         return {
-            "provider_ltm_settings": {"active_reply": {"enable": self.builtin_active}}
+            "provider_ltm_settings": {"active_reply": {"enable": self.builtin_active}},
+            "provider_settings": {"default_image_caption_provider_id": ""},
         }
+
+    async def get_current_chat_provider_id(self, umo: str):
+        return "current-model"
+
+    async def llm_generate(self, **kwargs):
+        self.llm_calls.append(kwargs)
+        return SimpleNamespace(
+            completion_text=self.llm_responses[kwargs["chat_provider_id"]]
+        )
 
 
 class FakeEvent:
-    def __init__(self, text: str = "普通消息", *, direct: bool = False) -> None:
+    def __init__(
+        self,
+        text: str = "普通消息",
+        *,
+        direct: bool = False,
+        group_id: str = "1",
+        sender_id: str = "user",
+        sender_name: str = "测试用户",
+    ) -> None:
         self.message_str = text
         self.is_at_or_wake_command = direct
-        self.unified_msg_origin = "default:GroupMessage:1"
+        self.group_id = group_id
+        self.sender_id = sender_id
+        self.sender_name = sender_name
+        self.unified_msg_origin = f"default:GroupMessage:{group_id}"
         self.message_obj = SimpleNamespace(message=[])
+        self.stopped = False
 
     def get_group_id(self):
-        return "1"
+        return self.group_id
 
     def get_sender_id(self):
-        return "user"
+        return self.sender_id
 
     def get_self_id(self):
         return "bot"
 
     def get_sender_name(self):
-        return "测试用户"
+        return self.sender_name
+
+    def stop_event(self):
+        self.stopped = True
 
     def request_llm(self, **kwargs):
         return kwargs
@@ -108,8 +135,72 @@ def test_respond_decision_uses_current_conversation() -> None:
     plugin._classify = classify
     results = asyncio.run(collect(plugin.gate_group_message(event)))
     assert len(results) == 1
-    assert results[0]["prompt"] == "Denia 你怎么看"
+    assert "昵称：测试用户" in results[0]["prompt"]
+    assert "账号：user" in results[0]["prompt"]
+    assert "当前消息：Denia 你怎么看" in results[0]["prompt"]
     assert results[0]["conversation"] is conversation
+
+
+def test_consecutive_senders_are_identified_separately() -> None:
+    conversation = SimpleNamespace(persona_id="daniya_agent")
+    plugin = make_plugin(conversation=conversation)
+
+    async def classify(*args, **kwargs):
+        return GateDecision("RESPOND", 0.95, "明确叫到机器人")
+
+    plugin._classify = classify
+    first = FakeEvent(
+        "Denia？",
+        sender_id="100",
+        sender_name="甲",
+    )
+    second = FakeEvent(
+        "Denia 你怎么看",
+        sender_id="200",
+        sender_name="乙",
+    )
+
+    first_result = asyncio.run(collect(plugin.gate_group_message(first)))
+    second_result = asyncio.run(collect(plugin.gate_group_message(second)))
+
+    assert "昵称：甲" in first_result[0]["prompt"]
+    assert "账号：100" in first_result[0]["prompt"]
+    assert "昵称：乙" in second_result[0]["prompt"]
+    assert "账号：200" in second_result[0]["prompt"]
+    assert "昵称：甲" not in second_result[0]["prompt"]
+    assert "账号：100" not in second_result[0]["prompt"]
+
+
+def test_group_blacklist_blocks_direct_mentions_before_default_reply() -> None:
+    plugin = make_plugin()
+    plugin.config["group_blacklist"] = "1"
+    event = FakeEvent("@Denia 你好", direct=True)
+
+    asyncio.run(plugin.block_blacklisted_message(event))
+
+    assert event.stopped
+
+
+def test_account_blacklist_blocks_direct_mentions_from_that_sender() -> None:
+    plugin = make_plugin()
+    plugin.config["account_blacklist"] = "100"
+    event = FakeEvent("@Denia 你好", direct=True, sender_id="100")
+
+    asyncio.run(plugin.block_blacklisted_message(event))
+
+    assert event.stopped
+
+
+def test_account_blacklist_does_not_block_people_who_only_mention_that_account() -> (
+    None
+):
+    plugin = make_plugin()
+    plugin.config["account_blacklist"] = "100"
+    event = FakeEvent("@其他机器人 你好", direct=True, sender_id="200")
+
+    asyncio.run(plugin.block_blacklisted_message(event))
+
+    assert not event.stopped
 
 
 def test_zero_probability_skips_ambient_message() -> None:
@@ -162,3 +253,36 @@ def test_legacy_enabled_key_no_longer_disables_plugin() -> None:
 
     plugin._classify = classify
     assert len(asyncio.run(collect(plugin.gate_group_message(event)))) == 1
+
+
+def test_image_description_and_decision_use_separate_models() -> None:
+    conversation = SimpleNamespace(persona_id="daniya_agent")
+    plugin = make_plugin(conversation=conversation)
+    plugin.config["image_provider_id"] = "vision-model"
+    plugin.config["decision_provider_id"] = "decision-model"
+    plugin.context.llm_responses = {
+        "vision-model": "角色正在挥手",
+        "decision-model": (
+            '{"decision":"RESPOND","confidence":0.9,"reason":"图片适合回应"}'
+        ),
+    }
+    event = FakeEvent("看看这个")
+
+    description = asyncio.run(plugin._describe_images(event, ["image.png"]))
+    decision = asyncio.run(
+        plugin._classify(
+            event,
+            aliases={"Denia"},
+            history=[],
+            has_images=True,
+            image_description=description,
+        )
+    )
+
+    assert description == "角色正在挥手"
+    assert decision is not None and decision.should_respond
+    assert plugin.context.llm_calls[0]["chat_provider_id"] == "vision-model"
+    assert plugin.context.llm_calls[0]["image_urls"] == ["image.png"]
+    assert plugin.context.llm_calls[1]["chat_provider_id"] == "decision-model"
+    assert "image_urls" not in plugin.context.llm_calls[1]
+    assert "图片内容描述：角色正在挥手" in plugin.context.llm_calls[1]["prompt"]

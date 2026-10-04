@@ -49,19 +49,9 @@ def contains_alias(text: str, aliases: set[str]) -> bool:
     return any(alias.casefold() in normalized for alias in aliases if alias)
 
 
-def starts_with_ignored_prefix(text: str, prefixes: set[str]) -> bool:
-    stripped = text.lstrip().casefold()
-    for prefix in prefixes:
-        normalized_prefix = prefix.casefold()
-        if not normalized_prefix or not stripped.startswith(normalized_prefix):
-            continue
-        remainder = stripped[len(normalized_prefix) :]
-        if not remainder:
-            return True
-        next_character = remainder[0]
-        if next_character.isascii() and (
-            next_character.isalnum() or next_character == "_"
-        ):
-            continue
-        return True
-    return False
+def account_is_blocked(
+    *,
+    sender_id: str,
+    blacklist: set[str],
+) -> bool:
+    return sender_id in blacklist
