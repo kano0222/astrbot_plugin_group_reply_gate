@@ -1,0 +1,15 @@
+name: astrbot_plugin_group_reply_gate
+display_name: 群聊参与助手
+short_desc: 让机器人只在群聊中值得接话时主动回应
+desc: >-
+  帮助 AstrBot 判断什么时候适合主动加入群聊。直接提及仍走 AstrBot 默认
+  回复链路；普通群消息经过范围、概率、间隔和“是否值得接话”判断后，才会
+  使用当前会话人格回复。
+version: 0.1.0
+author: kano
+repo: "https://github.com/kano0222/astrbot_plugin_group_reply_gate"
+tags:
+  - 群聊
+  - 主动回复
+  - LLM
+astrbot_version: ">=4.28,<5"

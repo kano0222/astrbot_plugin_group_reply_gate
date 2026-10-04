@@ -1,0 +1,87 @@
+{
+  "evaluation_probability_percent": {
+    "description": "参与判断概率（%）",
+    "type": "float",
+    "default": 15.0,
+    "hint": "每条普通群消息有多大概率交给模型判断是否值得接话，范围 0–100。明确叫到机器人称呼时不受此概率限制。"
+  },
+  "response_confidence_percent": {
+    "description": "回复把握要求（%）",
+    "type": "float",
+    "default": 80.0,
+    "hint": "模型认为应该接话的把握达到该数值才会回复，范围 0–100。数值越高越谨慎。"
+  },
+  "decision_provider_id": {
+    "description": "判断使用的模型",
+    "type": "string",
+    "_special": "select_provider",
+    "default": "",
+    "hint": "选择负责判断“要不要接话”的聊天模型；留空表示跟随当前会话模型。"
+  },
+  "group_whitelist": {
+    "description": "只在这些群生效",
+    "type": "text",
+    "default": "",
+    "hint": "填写群 ID 或完整 UMO，逗号、空格或换行分隔；留空表示所有群。"
+  },
+  "group_blacklist": {
+    "description": "不参与的群",
+    "type": "text",
+    "default": "",
+    "hint": "填写群 ID 或完整 UMO，逗号、空格或换行分隔。这里的设置优先于生效群列表。"
+  },
+  "bot_aliases": {
+    "description": "机器人称呼",
+    "type": "text",
+    "default": "",
+    "hint": "填写别人可能用来叫机器人的名字，逗号或换行分隔。叫到这些名字时跳过概率抽样，但仍会判断是否值得回复。"
+  },
+  "other_bot_ids": {
+    "description": "其他机器人的账号",
+    "type": "text",
+    "default": "",
+    "hint": "填写平台账号 ID，逗号、空格或换行分隔。QQ/OneBot 填机器人的 QQ 号，不填昵称或 /sid 返回的完整 UMO。消息中 @ 这些账号时会被忽略。"
+  },
+  "ignored_command_prefixes": {
+    "description": "忽略的命令开头",
+    "type": "text",
+    "default": "",
+    "hint": "逗号或换行分隔，例如 ww,/推文。匹配后若紧接其他英文字母、数字或下划线，则不视为命令，因此 ww 不会误伤 www。"
+  },
+  "context_message_count": {
+    "description": "参考最近消息数",
+    "type": "int",
+    "default": 10,
+    "hint": "判断要不要接话时额外参考多少条最近群消息，不包含当前消息。这不是 AstrBot 最终回复使用的会话上下文。"
+  },
+  "cooldown_seconds": {
+    "description": "主动回复间隔（秒）",
+    "type": "int",
+    "default": 0,
+    "hint": "同一群主动回复后至少等待多久再主动回复；设为 0 不限制。直接 @、引用和唤醒不经过这里。"
+  },
+  "decision_timeout_seconds": {
+    "description": "最长判断时间（秒）",
+    "type": "int",
+    "default": 15,
+    "hint": "模型判断要不要接话最多等待多久，最小 1 秒。超时或模型维护时保持沉默；需要暂停请停用插件，不建议无限等待。"
+  },
+  "inspect_images": {
+    "description": "查看群聊图片",
+    "type": "bool",
+    "default": false,
+    "hint": "允许模型查看未直接叫到机器人的群聊图片，再决定是否接话。可能增加费用，并会把图片发送给模型服务商。"
+  },
+  "max_decision_images": {
+    "description": "最多查看图片数",
+    "type": "int",
+    "default": 1,
+    "hint": "一条群消息进入判断时，最多交给模型查看的图片数量。"
+  },
+  "debug_log": {
+    "description": "记录判断结果",
+    "type": "bool",
+    "default": false,
+    "hint": "在日志中记录是否接话、把握程度和简短原因；不会记录完整消息正文或图片地址。"
+  }
+}
