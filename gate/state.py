@@ -16,6 +16,8 @@ class GroupGateState:
         self._history: dict[str, deque[HistoryEntry]] = defaultdict(deque)
         self._last_reply_at: dict[str, float] = {}
         self._inflight: set[str] = set()
+        self._message_boundaries: dict[str, int] = {}
+        self._present_until: dict[str, float] = {}
 
     def recent(self, group_key: str, limit: int) -> list[HistoryEntry]:
         if limit <= 0:
@@ -52,3 +54,34 @@ class GroupGateState:
 
     def end(self, group_key: str) -> None:
         self._inflight.discard(group_key)
+
+    def mark_message_boundary(self, group_key: str) -> int:
+        boundary = self._message_boundaries.get(group_key, 0) + 1
+        self._message_boundaries[group_key] = boundary
+        return boundary
+
+    def is_current_boundary(self, group_key: str, boundary: int) -> bool:
+        return self._message_boundaries.get(group_key) == boundary
+
+    def mark_present(
+        self,
+        group_key: str,
+        duration_seconds: float,
+        *,
+        now: float | None = None,
+    ) -> None:
+        if duration_seconds <= 0:
+            self._present_until.pop(group_key, None)
+            return
+        current = time.monotonic() if now is None else now
+        self._present_until[group_key] = current + duration_seconds
+
+    def is_present(self, group_key: str, *, now: float | None = None) -> bool:
+        expires_at = self._present_until.get(group_key)
+        if expires_at is None:
+            return False
+        current = time.monotonic() if now is None else now
+        if current >= expires_at:
+            self._present_until.pop(group_key, None)
+            return False
+        return True

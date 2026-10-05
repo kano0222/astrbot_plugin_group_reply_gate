@@ -26,3 +26,40 @@ def test_only_one_decision_can_be_inflight_per_group() -> None:
     assert state.begin("b")
     state.end("a")
     assert state.begin("a")
+
+
+def test_only_latest_message_boundary_remains_current_per_group() -> None:
+    state = GroupGateState()
+    first = state.mark_message_boundary("a")
+    other_group = state.mark_message_boundary("b")
+    second = state.mark_message_boundary("a")
+
+    assert not state.is_current_boundary("a", first)
+    assert state.is_current_boundary("a", second)
+    assert state.is_current_boundary("b", other_group)
+
+
+def test_presence_expires_per_group() -> None:
+    state = GroupGateState()
+    state.mark_present("a", 30, now=100.0)
+
+    assert state.is_present("a", now=129.9)
+    assert not state.is_present("a", now=130.0)
+    assert not state.is_present("b", now=101.0)
+
+
+def test_zero_presence_duration_clears_existing_presence() -> None:
+    state = GroupGateState()
+    state.mark_present("a", 30, now=100.0)
+    state.mark_present("a", 0, now=101.0)
+
+    assert not state.is_present("a", now=101.0)
+
+
+def test_marking_presence_again_renews_expiration() -> None:
+    state = GroupGateState()
+    state.mark_present("a", 30, now=100.0)
+    state.mark_present("a", 30, now=120.0)
+
+    assert state.is_present("a", now=149.9)
+    assert not state.is_present("a", now=150.0)

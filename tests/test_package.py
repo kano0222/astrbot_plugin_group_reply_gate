@@ -6,9 +6,9 @@ from pathlib import Path
 from scripts.build_release import PLUGIN_NAME, build_archive, read_version
 
 
-def test_metadata_version_is_one_zero_zero() -> None:
+def test_metadata_version_is_one_zero_one() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    assert read_version(repo_root / "metadata.yaml") == "1.0.0"
+    assert read_version(repo_root / "metadata.yaml") == "1.0.1"
 
 
 def test_release_archive_is_installable_and_excludes_development_files(
@@ -17,7 +17,7 @@ def test_release_archive_is_installable_and_excludes_development_files(
     repo_root = Path(__file__).resolve().parents[1]
     archive_path = build_archive(repo_root, tmp_path)
 
-    assert archive_path.name == f"{PLUGIN_NAME}-v1.0.0.zip"
+    assert archive_path.name == f"{PLUGIN_NAME}-v1.0.1.zip"
     with zipfile.ZipFile(archive_path) as archive:
         names = set(archive.namelist())
 

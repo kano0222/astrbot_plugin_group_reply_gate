@@ -8,7 +8,7 @@ from typing import Any
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.message_components import Image
+from astrbot.api.message_components import At, Image, Reply
 from astrbot.api.star import Context, Star
 
 from .gate import (
@@ -25,7 +25,7 @@ from .gate import (
     parse_string_set,
 )
 
-PLUGIN_NAME = "Group Active Reply Manager"
+PLUGIN_NAME = "群聊主动回复管理"
 IMAGE_DESCRIPTION_PROMPT = (
     "请用简洁、客观的中文描述图片中的主要人物、动作、场景和可见文字。"
     "如果是 GIF 抽帧拼图，请描述整体动作变化，不要称为多张独立图片。"
@@ -72,6 +72,19 @@ class GroupReplyGatePlugin(Star):
         if not isinstance(messages, Iterable) or isinstance(messages, (str, bytes)):
             return ()
         return tuple(messages)
+
+    def _is_explicit_wake(self, event: AstrMessageEvent) -> bool:
+        if event.is_at_or_wake_command:
+            return True
+        self_id = str(event.get_self_id() or "").strip()
+        if not self_id:
+            return False
+        for component in self._components(event):
+            if isinstance(component, At) and str(component.qq) == self_id:
+                return True
+            if isinstance(component, Reply) and str(component.sender_id) == self_id:
+                return True
+        return False
 
     def _builtin_active_reply_enabled(self, event: AstrMessageEvent) -> bool:
         try:
@@ -215,6 +228,14 @@ class GroupReplyGatePlugin(Star):
         if self._bool("debug_log", False):
             logger.info(f"{PLUGIN_NAME} | {event.unified_msg_origin} | {message}")
 
+    def _presence_seconds(self) -> float:
+        return self._float(
+            "presence_seconds",
+            120.0,
+            minimum=0,
+            maximum=3600,
+        )
+
     @filter.event_message_type(
         filter.EventMessageType.GROUP_MESSAGE,
         priority=maxsize + 1,
@@ -223,12 +244,22 @@ class GroupReplyGatePlugin(Star):
         """在 AstrBot 默认回复链之前阻止黑名单群或用户的消息。"""
 
         if self._group_blacklisted(event):
-            self._debug(event, "IGNORE rule=group_blacklist")
+            self._debug(event, "忽略 原因=群黑名单")
             event.stop_event()
             return
         if self._is_blocked_account(event):
-            self._debug(event, "IGNORE rule=account_blacklist")
+            self._debug(event, "忽略 原因=账号黑名单")
             event.stop_event()
+            return
+        if (
+            self._group_allowed(event)
+            and self._is_explicit_wake(event)
+            and str(event.get_sender_id() or "") != str(event.get_self_id() or "")
+        ):
+            self.state.mark_present(
+                event.unified_msg_origin,
+                self._presence_seconds(),
+            )
 
     @filter.event_message_type(
         filter.EventMessageType.GROUP_MESSAGE,
@@ -239,12 +270,18 @@ class GroupReplyGatePlugin(Star):
 
         if not self._group_allowed(event):
             return
-        if event.is_at_or_wake_command:
-            return
         if str(event.get_sender_id() or "") == str(event.get_self_id() or ""):
+            return
+        if self._is_blocked_account(event):
+            self._debug(event, "忽略 原因=账号黑名单")
             return
 
         group_key = event.unified_msg_origin
+        presence_seconds = self._presence_seconds()
+        if self._is_explicit_wake(event):
+            self.state.mark_present(group_key, presence_seconds)
+            return
+
         components = self._components(event)
         has_images = any(isinstance(component, Image) for component in components)
         history_limit = self._int("context_message_count", 10, minimum=1)
@@ -268,16 +305,28 @@ class GroupReplyGatePlugin(Star):
         text = str(event.message_str or "").strip()
         if not text and not has_images:
             return
-        if self._is_blocked_account(event):
-            self._debug(event, "IGNORE rule=account_blacklist")
-            return
+        aliases = parse_string_set(self.config.get("bot_aliases", ""))
+        explicitly_addressed = contains_alias(text, aliases)
+        bot_is_present = self.state.is_present(group_key)
+        quiet_period = self._float(
+            "quiet_period_seconds",
+            2.0,
+            minimum=0,
+            maximum=30,
+        )
+        boundary = self.state.mark_message_boundary(group_key)
+        if quiet_period > 0 and not explicitly_addressed:
+            await asyncio.sleep(quiet_period)
+            if not self.state.is_current_boundary(group_key, boundary):
+                self._debug(event, "忽略 原因=被更新消息替代")
+                return
 
         cooldown = self._int("cooldown_seconds", 0)
         if self.state.cooling_down(group_key, cooldown):
-            self._debug(event, "IGNORE rule=cooldown")
+            self._debug(event, "忽略 原因=主动回复间隔")
             return
         if not self.state.begin(group_key):
-            self._debug(event, "IGNORE rule=decision_inflight")
+            self._debug(event, "忽略 原因=已有判断任务")
             return
 
         try:
@@ -296,32 +345,31 @@ class GroupReplyGatePlugin(Star):
                 maximum=100,
             )
             confidence_threshold = confidence_percent / 100
-            aliases = parse_string_set(self.config.get("bot_aliases", ""))
-
             conversation_id = (
                 await self.context.conversation_manager.get_curr_conversation_id(
                     event.unified_msg_origin,
                 )
             )
             if not conversation_id:
-                self._debug(event, "IGNORE rule=no_active_conversation")
+                self._debug(event, "忽略 原因=没有活动会话")
                 return
             conversation = await self.context.conversation_manager.get_conversation(
                 event.unified_msg_origin,
                 conversation_id,
             )
             if not conversation:
-                self._debug(event, "IGNORE rule=conversation_not_found")
+                self._debug(event, "忽略 原因=会话不存在")
                 return
             persona_id = str(getattr(conversation, "persona_id", "") or "").strip()
             if persona_id and persona_id not in {"default", "[%None]"}:
                 aliases.add(persona_id)
 
             if (
-                not contains_alias(text, aliases)
+                not explicitly_addressed
+                and not bot_is_present
                 and random.random() >= evaluation_probability
             ):
-                self._debug(event, "IGNORE rule=activity_sampling")
+                self._debug(event, "忽略 原因=未抽中参与判断")
                 return
 
             image_paths: list[str] = []
@@ -358,17 +406,25 @@ class GroupReplyGatePlugin(Star):
                 return
 
             if decision is None:
-                self._debug(event, "IGNORE rule=invalid_decision")
+                self._debug(event, "忽略 原因=判断结果无效")
+                return
+            if not decision.should_respond:
+                self._debug(
+                    event,
+                    f"判断=忽略 把握={decision.confidence:.2f} 原因={decision.reason}",
+                )
+                return
+            if decision.confidence < confidence_threshold:
+                self._debug(
+                    event,
+                    f"忽略 原因=回复把握不足 当前={decision.confidence:.2f} "
+                    f"要求={confidence_threshold:.2f}",
+                )
                 return
             self._debug(
                 event,
-                f"{decision.action} confidence={decision.confidence:.2f} "
-                f"reason={decision.reason}",
+                f"判断=回复 把握={decision.confidence:.2f} 原因={decision.reason}",
             )
-            if not decision.should_respond:
-                return
-            if decision.confidence < confidence_threshold:
-                return
 
             main_image_paths = image_paths
             if has_images and not main_image_paths:
@@ -382,6 +438,7 @@ class GroupReplyGatePlugin(Star):
                 current_text=text,
                 image_description=image_description,
             )
+            self.state.mark_present(group_key, presence_seconds)
             self.state.mark_reply(group_key)
             yield event.request_llm(
                 prompt=prompt,

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1 - 2026-10-05
+
+- Wait for a configurable quiet period before evaluating ambient group messages that do not explicitly address the bot.
+- Let newer messages replace older pending trigger boundaries while retaining them as decision context.
+- Keep a configurable per-group presence window after the bot is explicitly addressed, bypassing random sampling while preserving model judgment.
+- Record direct wake-ups before AstrBot's normal reply path can stop lower-priority handlers, including raw At and Reply components before the wake flag is available.
+- Use Chinese labels for debug decisions and ignore reasons.
+- Renew the per-group presence window whenever a decision passes the reply threshold, while ignored or low-confidence messages do not extend it.
+- Explain low-confidence skips explicitly in debug logs instead of reporting them as replies.
+
 ## 1.0.0 - 2026-10-04
 
 - Show concise setting titles with explanatory hints in AstrBot WebUI.
